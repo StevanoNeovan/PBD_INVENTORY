@@ -49,10 +49,14 @@
                         </tr>
                         <tr>
                             <th>ID Pengadaan</th>
-                            <td>: <a href="{{ route('superadmin.pengadaan.show', $penerimaan->idpengadaan) }}">#{{ $penerimaan->idpengadaan }}</a></td>
+                            <td>: <a href="{{ route('superadmin.pengadaan.show', $penerimaan->idpengadaan) }}" class="text-decoration-none">#{{ $penerimaan->idpengadaan }}</a></td>
                         </tr>
                         <tr>
-                            <th>Tanggal Terima</th>
+                            <th>Tgl Pengadaan</th>
+                            <td>: {{ \Carbon\Carbon::parse($penerimaan->tanggal_pengadaan)->format('d/m/Y H:i') }}</td>
+                        </tr>
+                        <tr>
+                            <th>Tgl Penerimaan</th>
                             <td>: {{ \Carbon\Carbon::parse($penerimaan->created_at)->format('d/m/Y H:i') }}</td>
                         </tr>
                         <tr>
@@ -71,7 +75,11 @@
                         </tr>
                         <tr>
                             <th>Vendor</th>
-                            <td>: {{ $penerimaan->nama_vendor }}</td>
+                            <td>: <strong>{{ $penerimaan->nama_vendor }}</strong></td>
+                        </tr>
+                        <tr>
+                            <th>Total Nilai</th>
+                            <td>: <strong class="text-success">Rp {{ number_format($totalNilai, 0, ',', '.') }}</strong></td>
                         </tr>
                     </table>
 
@@ -82,7 +90,7 @@
                         @if($statusPengadaan == 'SELESAI')
                             <span class="badge bg-success mt-2">SELESAI - Semua Lengkap</span>
                         @elseif($statusPengadaan == 'PARTIAL')
-                            <span class="badge bg-warning mt-2">PARTIAL - Masih Ada Sisa</span>
+                            <span class="badge bg-warning text-dark mt-2">PARTIAL - Masih Ada Sisa</span>
                         @else
                             <span class="badge bg-danger mt-2">BELUM - Belum Ada Penerimaan</span>
                         @endif
@@ -110,7 +118,7 @@
                             JOIN user u ON r.iduser = u.iduser
                             LEFT JOIN detail_retur dr ON r.idretur = dr.idretur
                             WHERE r.idpenerimaan = ?
-                            GROUP BY r.idretur
+                            GROUP BY r.idretur, r.created_at, u.username
                             ORDER BY r.created_at DESC
                         ", [$penerimaan->idpenerimaan]);
                     @endphp
@@ -122,7 +130,7 @@
                                     <th>ID Retur</th>
                                     <th>Tanggal</th>
                                     <th>Petugas</th>
-                                    <th>Item</th>
+                                    <th class="text-center">Item</th>
                                     <th class="text-center">Aksi</th>
                                 </tr>
                             </thead>
@@ -132,7 +140,7 @@
                                     <td><span class="badge bg-danger">RTR-{{ str_pad($rtr->idretur, 4, '0', STR_PAD_LEFT) }}</span></td>
                                     <td class="small">{{ \Carbon\Carbon::parse($rtr->created_at)->format('d/m/Y H:i') }}</td>
                                     <td class="small">{{ $rtr->username }}</td>
-                                    <td><span class="badge bg-secondary">{{ $rtr->jumlah_item }}</span></td>
+                                    <td class="text-center"><span class="badge bg-secondary">{{ $rtr->jumlah_item }}</span></td>
                                     <td class="text-center">
                                         <a href="{{ route('superadmin.retur.show', $rtr->idretur) }}" class="btn btn-sm btn-info" title="Lihat Detail">
                                             <i class="fas fa-eye"></i>
@@ -160,35 +168,119 @@
                         <table class="table table-bordered table-hover">
                             <thead class="table-light">
                                 <tr>
-                                    <th>No</th>
+                                    <th width="40">No</th>
                                     <th>Nama Barang</th>
-                                    <th>Kategori</th>
-                                    <th class="text-center">Jumlah Diterima</th>
-                                    <th class="text-end">Harga Satuan</th>
-                                    <th class="text-end">Subtotal</th>
+                                    <th width="150">Kategori</th>
+                                    <th class="text-center" width="100">Jumlah Diterima</th>
+                                    <th class="text-end" width="120">Harga Barang Sebelum</th>
+                                    <th class="text-end" width="120">Harga Invoice</th>
+                                    <th class="text-end" width="120">Harga Barang Sekarang</th>
+                                    <th class="text-end" width="130">Subtotal</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                @php $grandTotal = 0; @endphp
-                                @foreach($details as $index => $d)
-                                @php $grandTotal += $d->sub_total_terima; @endphp
-                                <tr>
-                                    <td>{{ $index + 1 }}</td>
-                                    <td><strong>{{ $d->nama_barang }}</strong></td>
-                                    <td>{{ $d->kategori_barang }}</td>
-                                    <td class="text-center">
-                                        <span class="badge bg-success">{{ $d->jumlah_terima }} {{ $d->nama_satuan }}</span>
-                                    </td>
-                                    <td class="text-end">Rp {{ number_format($d->harga_satuan_terima, 0, ',', '.') }}</td>
-                                    <td class="text-end"><strong>Rp {{ number_format($d->sub_total_terima, 0, ',', '.') }}</strong></td>
-                                </tr>
-                                @endforeach
-                                <tr class="table-primary">
-                                    <td colspan="5" class="text-end"><strong>TOTAL</strong></td>
-                                    <td class="text-end"><strong>Rp {{ number_format($grandTotal, 0, ',', '.') }}</strong></td>
-                                </tr>
-                            </tbody>
+                           <tbody>
+    @foreach($details as $index => $d)
+    <tr>
+        <td class="text-center">{{ $index + 1 }}</td>
+        <td><strong>{{ $d->nama_barang }}</strong></td>
+        <td><small class="text-muted">{{ $d->kategori_barang }}</small></td>
+        <td class="text-center">
+            <span class="badge bg-success">{{ $d->jumlah_terima }} {{ $d->nama_satuan }}</span>
+        </td>
+        
+        <!-- HARGA BARANG SEBELUM PENERIMAAN INI -->
+        <td class="text-end">
+            @if($d->harga_barang_sebelum)
+                <span class="text-muted">Rp {{ number_format($d->harga_barang_sebelum, 0, ',', '.') }}</span>
+            @else
+                <span class="badge bg-info text-white">Penerimaan Pertama</span>
+            @endif
+        </td>
+        
+        <!-- HARGA INVOICE (HARGA SATUAN TERIMA) -->
+        <td class="text-end">
+            @if($d->harga_barang_sebelum)
+                @php
+                    $selisih_invoice = $d->harga_satuan_terima - $d->harga_barang_sebelum;
+                @endphp
+                
+                @if($selisih_invoice > 0)
+                    {{-- Harga naik dari sebelumnya --}}
+                    <strong class="text-danger" title="Naik Rp {{ number_format($selisih_invoice, 0, ',', '.') }}">
+                        Rp {{ number_format($d->harga_satuan_terima, 0, ',', '.') }} 
+                        <i class="fas fa-arrow-up"></i>
+                    </strong>
+                @elseif($selisih_invoice < 0)
+                    {{-- Harga turun dari sebelumnya --}}
+                    <strong class="text-success" title="Turun Rp {{ number_format(abs($selisih_invoice), 0, ',', '.') }}">
+                        Rp {{ number_format($d->harga_satuan_terima, 0, ',', '.') }} 
+                        <i class="fas fa-arrow-down"></i>
+                    </strong>
+                @else
+                    {{-- Harga sama --}}
+                    <strong>Rp {{ number_format($d->harga_satuan_terima, 0, ',', '.') }}</strong>
+                @endif
+            @else
+                <strong>Rp {{ number_format($d->harga_satuan_terima, 0, ',', '.') }}</strong>
+            @endif
+        </td>
+        
+                                <!-- HARGA BARANG SEKARANG (SETELAH UPDATE TRIGGER) -->
+                                <td class="text-end">
+                                    @php
+                                        // Bandingkan harga invoice dengan harga barang sekarang
+                                        $selisih_sekarang = $d->harga_barang_sekarang - $d->harga_satuan_terima;
+                                    @endphp
+                                    
+                                    @if($selisih_sekarang > 0)
+                                        {{-- Harga naik setelah penerimaan ini (ada penerimaan baru) --}}
+                                        <span class="badge bg-danger" title="Harga naik Rp {{ number_format($selisih_sekarang, 0, ',', '.') }}">
+                                            Rp {{ number_format($d->harga_barang_sekarang, 0, ',', '.') }} 
+                                            <i class="fas fa-arrow-up"></i>
+                                        </span>
+                                    @elseif($selisih_sekarang < 0)
+                                        {{-- Harga turun setelah penerimaan ini (ada penerimaan baru dengan harga lebih murah) --}}
+                                        <span class="badge bg-success" title="Harga turun Rp {{ number_format(abs($selisih_sekarang), 0, ',', '.') }}">
+                                            Rp {{ number_format($d->harga_barang_sekarang, 0, ',', '.') }} 
+                                            <i class="fas fa-arrow-down"></i>
+                                        </span>
+                                    @else
+                                        {{-- Harga masih sama (belum ada penerimaan baru) --}}
+                                        <span class="badge bg-secondary" title="Harga masih sama / penerimaan terakhir">
+                                            Rp {{ number_format($d->harga_barang_sekarang, 0, ',', '.') }}
+                                        </span>
+                                    @endif
+                                </td>
+                                
+                                <td class="text-end"><strong>Rp {{ number_format($d->sub_total_terima, 0, ',', '.') }}</strong></td>
+                            </tr>
+                            @endforeach
+                            <tr class="table-primary">
+                                <td colspan="7" class="text-end"><strong>TOTAL NILAI PENERIMAAN</strong></td>
+                                <td class="text-end"><strong>Rp {{ number_format($totalNilai, 0, ',', '.') }}</strong></td>
+                            </tr>
+                        </tbody>
                         </table>
+                    </div>
+
+                    <div class="alert alert-info mt-3 mb-0">
+                        <i class="fas fa-info-circle"></i> <strong>Penjelasan Kolom Harga:</strong>
+                        <ul class="mb-0 mt-2">
+                            <li><strong>"Harga Barang Sebelum"</strong> = Harga barang dari penerimaan sebelumnya (jika ada)</li>
+                            <li><strong>"Harga Invoice"</strong> = Harga dari invoice vendor saat penerimaan ini
+                                <ul>
+                                    <li><i class="fas fa-arrow-up text-danger"></i> = Harga naik dari sebelumnya</li>
+                                    <li><i class="fas fa-arrow-down text-success"></i> = Harga turun dari sebelumnya</li>
+                                </ul>
+                            </li>
+                            <li><strong>"Harga Barang Sekarang"</strong> = Harga terbaru di sistem (hasil update trigger)
+                                <ul>
+                                    <li>Badge <span class="badge bg-secondary">abu-abu</span> = Ini adalah penerimaan terakhir</li>
+                                    <li>Badge <span class="badge bg-danger">merah <i class="fas fa-arrow-up"></i></span> = Ada penerimaan baru dengan harga lebih tinggi</li>
+                                    <li>Badge <span class="badge bg-success">hijau <i class="fas fa-arrow-down"></i></span> = Ada penerimaan baru dengan harga lebih murah</li>
+                                </ul>
+                            </li>
+                        </ul>
                     </div>
                 </div>
             </div>
@@ -199,30 +291,41 @@
                     <h6 class="m-0"><i class="fas fa-clipboard-list"></i> Update Kartu Stok</h6>
                 </div>
                 <div class="card-body">
+                    @if(count($kartuStok) > 0)
                     <div class="table-responsive">
-                        <table class="table table-sm table-bordered">
+                        <table class="table table-sm table-bordered table-hover">
                             <thead class="table-light">
                                 <tr>
-                                    <th>Barang</th>
-                                    <th class="text-center">Stok Masuk</th>
-                                    <th class="text-center">Stok Sekarang</th>
-                                    <th>Waktu</th>
+                                    <th>Nama Barang</th>
+                                    <th class="text-center" width="120">Stok Masuk</th>
+                                    <th class="text-center" width="120">Saldo Stok</th>
+                                    <th width="150">Waktu Update</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach($kartuStok as $ks)
                                 <tr>
-                                    <td>{{ $ks->nama_barang }}</td>
-                                    <td class="text-center"><span class="badge bg-success">+{{ $ks->masuk }}</span></td>
-                                    <td class="text-center"><strong>{{ $ks->stock }}</strong></td>
-                                    <td>{{ \Carbon\Carbon::parse($ks->created_at)->format('d/m/Y H:i') }}</td>
+                                    <td><strong>{{ $ks->nama_barang }}</strong></td>
+                                    <td class="text-center">
+                                        <span class="badge bg-success">+{{ $ks->masuk }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <strong class="text-primary">{{ $ks->saldo_stok }}</strong>
+                                    </td>
+                                    <td>{{ \Carbon\Carbon::parse($ks->created_at)->format('d/m/Y H:i:s') }}</td>
                                 </tr>
                                 @endforeach
                             </tbody>
                         </table>
                     </div>
+                    @else
+                    <div class="alert alert-warning mb-0">
+                        <i class="fas fa-exclamation-triangle"></i> Tidak ada data kartu stok untuk penerimaan ini.
+                    </div>
+                    @endif
+                    
                     <div class="alert alert-success mt-3 mb-0">
-                        <i class="fas fa-check-circle"></i> Stok barang telah diperbarui otomatis ke kartu stok.
+                        <i class="fas fa-check-circle"></i> <strong>Stok barang telah diperbarui otomatis </strong>
                     </div>
                 </div>
             </div>

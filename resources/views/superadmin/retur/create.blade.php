@@ -3,11 +3,6 @@
 @section('content')
 <div class="container-fluid px-4">
     <h1 class="mt-4">Buat Retur Barang</h1>
-    <ol class="breadcrumb mb-4">
-        <li class="breadcrumb-item"><a href="{{ route('superadmin.dashboard') }}">Dashboard</a></li>
-        <li class="breadcrumb-item"><a href="{{ route('superadmin.penerimaan.show', $penerimaan->idpenerimaan) }}">Penerimaan</a></li>
-        <li class="breadcrumb-item active">Retur</li>
-    </ol>
 
     @if(session('error'))
         <div class="alert alert-danger alert-dismissible fade show" role="alert">

@@ -3,11 +3,6 @@
 @section('content')
 <div class="container-fluid px-4">
     <h1 class="mt-4">Detail Retur Barang</h1>
-    <ol class="breadcrumb mb-4">
-        <li class="breadcrumb-item"><a href="{{ route('superadmin.dashboard') }}">Dashboard</a></li>
-        <li class="breadcrumb-item"><a href="{{ route('superadmin.retur.index') }}">Retur</a></li>
-        <li class="breadcrumb-item active">Detail</li>
-    </ol>
 
     <div class="row">
         <!-- Info Retur -->

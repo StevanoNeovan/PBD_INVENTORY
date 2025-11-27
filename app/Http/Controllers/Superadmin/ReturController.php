@@ -201,21 +201,17 @@ class ReturController extends Controller
                 }
             }
 
-            // Proses retur menggunakan stored procedure
+            // Proses retur
             foreach ($request->barangs as $item) {
-                $idbarang = DB::selectOne("
-                    SELECT idbarang 
-                    FROM detail_penerimaan 
-                    WHERE iddetail_penerimaan = ?
-                ", [$item['iddetail_penerimaan']])->idbarang;
 
-                DB::statement("CALL sp_retur_barang(?, ?, ?, ?, ?)", [
-                    $idpenerimaan,
-                    $iduser,
-                    $idbarang,
-                    $item['jumlah'],
-                    $item['alasan']
-                ]);
+               DB::statement("CALL sp_retur_barang(?, ?, ?, ?, ?)", [
+                $idpenerimaan,
+                $iduser,
+                $item['iddetail_penerimaan'],
+                $item['jumlah'],
+                $item['alasan']
+            ]);
+
             }
 
             DB::commit();

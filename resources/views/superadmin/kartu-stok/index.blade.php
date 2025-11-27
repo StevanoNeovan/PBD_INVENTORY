@@ -121,10 +121,17 @@
                                     <a href="{{ route('superadmin.penerimaan.show', $ks->idtransaksi) }}" class="btn btn-sm btn-info">
                                         #{{ $ks->idtransaksi }}
                                     </a>
+
                                 @elseif($ks->jenis_transaksi == 'J')
                                     <a href="{{ route('superadmin.penjualan.show', $ks->idtransaksi) }}" class="btn btn-sm btn-info">
                                         #{{ $ks->idtransaksi }}
                                     </a>
+
+                                @elseif($ks->jenis_transaksi == 'R')
+                                    <a href="{{ route('superadmin.retur.show', $ks->idtransaksi) }}" class="btn btn-sm btn-warning">
+                                        #{{ $ks->idtransaksi }}
+                                    </a>
+
                                 @else
                                     <span class="badge bg-secondary">#{{ $ks->idtransaksi }}</span>
                                 @endif
