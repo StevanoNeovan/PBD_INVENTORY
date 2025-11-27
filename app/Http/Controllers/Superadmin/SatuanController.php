@@ -15,21 +15,21 @@ class SatuanController extends Controller
     public function index(Request $request)
     {
     
-        if ($request->status == 'nonaktif') {
-            $satuan = DB::table('v_data_satuan_nonaktif')
-                ->orderBy('idsatuan', 'desc')
-                ->get();
-        }elseif ($request->status == 'aktif') {
-            $satuan = DB::table('v_data_satuan_aktif')
-                ->orderBy('idsatuan', 'desc')
-                ->get();
-        }else {
-            $satuan = DB::table('v_data_satuan')
-                ->orderBy('idsatuan', 'desc')
-                ->get();
+         try {
+            $filter = $request->get('filter', 'all'); // all, aktif, nonaktif
+            
+            if ($filter === 'aktif') {
+                $satuans = DB::select("SELECT * FROM v_data_satuan_aktif");
+            } elseif ($filter === 'nonaktif') {
+                $satuans = DB::select("SELECT * FROM v_data_satuan_nonaktif");
+            } else {
+                $satuans = DB::select("SELECT * FROM v_data_satuan");
+            }
+            
+            return view('superadmin.satuan.index', compact('satuans', 'filter'));
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Gagal memuat data satuan: ' . $e->getMessage());
         }
-
-        return view('superadmin.satuan.index', compact('satuan'));
     }
 
 
@@ -63,6 +63,47 @@ class SatuanController extends Controller
 
         return view('superadmin.satuan.create', compact('satuan'));
     }
+
+   public function show(string $id)
+{
+    try {
+            $satuans = DB::select("
+                SELECT * FROM v_data_satuan WHERE idsatuan = ?
+            ", [$id]);
+
+            if (empty($satuans)) {
+                return redirect()->route('superadmin.satuan.index')
+                               ->with('error', 'Satuan tidak ditemukan');
+            }
+
+        // Ambil barang yang menggunakan satuan ini
+        $barangs = DB::select("
+            SELECT 
+                b.idbarang,
+                b.nama,
+                b.jenis,
+                b.harga,
+                CASE 
+                WHEN STATUS = 1 THEN 'Aktif'
+                ELSE 'Tidak Aktif'
+                END AS status
+            FROM barang b
+            WHERE b.idsatuan = ?
+            ORDER BY b.nama ASC
+        ", [$id]);
+
+        return view('superadmin.satuan.show', [
+            'satuans' => $satuans[0],
+            'barangs' => $barangs
+        ]);
+
+    } catch (\Exception $e) {
+        return redirect()
+            ->route('superadmin.satuan.index')
+            ->with('error', 'Gagal memuat data: ' . $e->getMessage());
+    }
+}
+
 
     /**
      * Show edit form
@@ -106,58 +147,48 @@ class SatuanController extends Controller
     public function toggleStatus($id)
     {
         try {
-            $satuan = Satuan::findOrFail($id);
+            $satuan = DB::select("SELECT status FROM satuan WHERE idsatuan = ?", [$id]);
             
-            // Cek apakah satuan sedang digunakan
-            $isUsed = DB::table('barang')
-                ->where('idsatuan', $id)
-                ->where('status', 1)
-                ->exists();
-            
-            if ($isUsed && $satuan->status == 1) {
-                return back()->with('warning', 
-                    'Tidak dapat menonaktifkan satuan yang masih digunakan oleh barang aktif');
+            if (empty($satuan)) {
+                return redirect()->back()->with('error', 'satuan tidak ditemukan');
             }
+
+            $newStatus = $satuan[0]->status == 1 ? 0 : 1;
             
-            $satuan->status = $satuan->status == 1 ? 0 : 1;
-            $satuan->save();
-            
-            $message = $satuan->status == 1 
-                ? 'Satuan berhasil diaktifkan' 
-                : 'Satuan berhasil dinonaktifkan';
-            
-            return back()->with('success', $message);
-            
+            DB::statement("UPDATE satuan SET status = ? WHERE idsatuan = ?", [$newStatus, $id]);
+
+            $message = $newStatus == 1 ? 'Satuan berhasil diaktifkan!' : 'Satuan berhasil dinonaktifkan!';
+
+            return redirect()->back()->with('success', $message);
         } catch (\Exception $e) {
-            return back()->with('error', 'Gagal mengubah status: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Gagal mengubah status: ' . $e->getMessage());
         }
     }
 
     /**
      * Delete satuan (hard delete)
      */
-    public function destroy($id)
+    public function destroy(string $id)
     {
         try {
-            $satuan = Satuan::findOrFail($id);
-            
-            // Cek apakah satuan pernah digunakan
-            $isUsed = DB::table('barang')
-                ->where('idsatuan', $id)
-                ->exists();
-            
-            if ($isUsed) {
-                return back()->with('warning', 
-                    'Tidak dapat menghapus satuan yang sudah digunakan. Gunakan fitur nonaktifkan.');
+            // Cek apakah satuan digunakan
+            $isUsed = DB::select("
+                SELECT COUNT(*) as total FROM barang WHERE idsatuan = ?
+            ", [$id]);
+
+            if ($isUsed[0]->total > 0) {
+                return redirect()->back()
+                               ->with('warning', 'Satuan tidak dapat dihapus karena sudah digunakan di pengadaan!');
             }
-            
-            $satuan->delete();
-            
+
+            // Soft delete dengan update status menjadi nonaktif
+            DB::statement("UPDATE satuan SET status = 0 WHERE idsatuan = ?", [$id]);
+
             return redirect()->route('superadmin.satuan.index')
-                ->with('success', 'Satuan berhasil dihapus');
-                
+                           ->with('success', 'Satuan berhasil dinonaktifkan!');
         } catch (\Exception $e) {
-            return back()->with('error', 'Gagal menghapus satuan: ' . $e->getMessage());
+            return redirect()->back()
+                           ->with('error', 'Gagal menonaktifkan satuan: ' . $e->getMessage());
         }
     }
 }

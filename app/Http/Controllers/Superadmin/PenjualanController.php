@@ -3,251 +3,231 @@
 namespace App\Http\Controllers\Superadmin;
 
 use App\Http\Controllers\Controller;
-use App\Models\TempDetailPenjualan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 
 class PenjualanController extends Controller
 {
-    // Halaman POS (Point of Sale)
-    public function pos()
+    /**
+     * Display a listing of the resource.
+     */
+    public function index()
     {
-        // Barang aktif dengan stok
-        $barang = DB::table('v_data_barang_aktif as b')
-            ->leftJoin('v_laporan_stok_barang as s', 'b.idbarang', '=', 's.idbarang')
-            ->select('b.*', 's.saldo_akhir as stok')
-            ->where('s.saldo_akhir', '>', 0)
-            ->get();
-
-        // Margin penjualan aktif
-        $margin = DB::table('v_data_margin_penjualan_aktif')->get();
-
-        // Cart items (temp table)
-        $cart = TempDetailPenjualan::with('barang', 'marginPenjualan')->get();
-
-        // Hitung total cart
-        $subtotal = $cart->sum('subtotal');
-        $ppn = $subtotal * 0.11;
-        $grandTotal = $subtotal + $ppn;
-
-        return view('superadmin.penjualan.pos', compact(
-            'barang', 
-            'margin', 
-            'cart', 
-            'subtotal', 
-            'ppn', 
-            'grandTotal'
-        ));
-    }
-
-    // Tambah item ke cart (AJAX)
-    public function addToCart(Request $request)
-    {
-        $validated = $request->validate([
-            'idbarang' => 'required|exists:barang,idbarang',
-            'jumlah' => 'required|integer|min:1',
-            'idmargin_penjualan' => 'required|exists:margin_penjualan,idmargin_penjualan'
-        ]);
-
         try {
-            // Get harga beli barang
-            $barang = DB::table('barang')->find($validated['idbarang']);
-            $hargaBeli = $barang->harga;
-
-            // Cek stok available
-            $stok = DB::table('v_laporan_stok_barang')
-                ->where('idbarang', $validated['idbarang'])
-                ->value('saldo_akhir');
-
-            if ($stok < $validated['jumlah']) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Stok tidak cukup! Stok tersedia: ' . $stok
-                ], 400);
-            }
-
-            // Insert ke temp table
-            // TRIGGER akan otomatis hitung harga_jual dan subtotal
-            TempDetailPenjualan::create([
-                'idbarang' => $validated['idbarang'],
-                'jumlah' => $validated['jumlah'],
-                'harga_beli' => $hargaBeli,
-                'idmargin_penjualan' => $validated['idmargin_penjualan']
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Item berhasil ditambahkan ke keranjang'
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal menambah item: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    // Update quantity item di cart (AJAX)
-    public function updateCartItem(Request $request, $id)
-    {
-        $validated = $request->validate([
-            'jumlah' => 'required|integer|min:1'
-        ]);
-
-        try {
-            $item = TempDetailPenjualan::findOrFail($id);
+            // Ambil margin aktif
+            $marginAktif = DB::select("SELECT * FROM v_data_margin_penjualan_aktif LIMIT 1");
+            $marginAktif = !empty($marginAktif) ? $marginAktif[0] : null;
             
-            // Cek stok
-            $stok = DB::table('v_laporan_stok_barang')
-                ->where('idbarang', $item->idbarang)
-                ->value('saldo_akhir');
-
-            if ($stok < $validated['jumlah']) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Stok tidak cukup!'
-                ], 400);
-            }
-
-            $item->jumlah = $validated['jumlah'];
-            $item->save();
-            // Trigger akan re-calculate subtotal
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Quantity diupdate'
-            ]);
-
+            // Ambil semua penjualan
+            $penjualans = DB::select("
+                SELECT DISTINCT
+                    p.idpenjualan,
+                    p.created_at,
+                    p.subtotal_nilai,
+                    p.ppn,
+                    p.total_nilai,
+                    u.username,
+                    m.persen AS persen_margin
+                FROM penjualan p
+                JOIN user u ON p.iduser = u.iduser
+                JOIN margin_penjualan m ON p.idmargin_penjualan = m.idmargin_penjualan
+                ORDER BY p.created_at DESC
+            ");
+            
+            // Hitung total
+            $totalSubtotal = array_sum(array_column($penjualans, 'subtotal_nilai'));
+            $totalPPN = array_sum(array_column($penjualans, 'ppn'));
+            $totalGrand = array_sum(array_column($penjualans, 'total_nilai'));
+            
+            return view('superadmin.penjualan.index', compact('penjualans', 'marginAktif', 'totalSubtotal', 'totalPPN', 'totalGrand'));
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 500);
+            return back()->with('error', 'Gagal memuat data: ' . $e->getMessage());
         }
     }
 
-    // Hapus item dari cart (AJAX)
-    public function removeFromCart($id)
+    /**
+     * Show the form for creating a new resource.
+     */
+    public function create()
     {
         try {
-            TempDetailPenjualan::findOrFail($id)->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Item dihapus dari keranjang'
+            // Ambil margin aktif
+            $marginAktif = DB::select("SELECT * FROM v_data_margin_penjualan_aktif LIMIT 1");
+            $marginAktif = !empty($marginAktif) ? $marginAktif[0] : null;
+            
+            // Ambil barang aktif dengan stok dan harga jual
+            $barangs = DB::select("
+                SELECT 
+                    b.idbarang,
+                    b.nama AS nama_barang,
+                    s.nama_satuan,
+                    b.harga AS harga_beli,
+                    fn_cek_stok(b.idbarang) AS stok_tersedia,
+                    CASE 
+                        WHEN ? IS NOT NULL THEN 
+                            ROUND(b.harga * (1 + (? / 100)), 0)
+                        ELSE 
+                            b.harga
+                    END AS harga_jual
+                FROM barang b
+                JOIN satuan s ON b.idsatuan = s.idsatuan
+                WHERE b.status = 1
+                HAVING stok_tersedia > 0
+                ORDER BY b.nama ASC
+            ", [
+                $marginAktif ? $marginAktif->persen_margin : null,
+                $marginAktif ? $marginAktif->persen_margin : null
             ]);
+            
+            return view('superadmin.penjualan.create', compact('barangs', 'marginAktif'));
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 500);
+            return back()->with('error', 'Gagal memuat data: ' . $e->getMessage());
         }
     }
 
-    // Clear cart
-    public function clearCart()
+    /**
+     * Store a newly created resource in storage.
+     */
+    public function store(Request $request)
     {
-        try {
-            TempDetailPenjualan::truncate();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Keranjang dikosongkan'
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    // Proses checkout (menggunakan stored procedure)
-    public function checkout(Request $request)
-    {
-        $validated = $request->validate([
-            'idmargin_penjualan' => 'required|exists:margin_penjualan,idmargin_penjualan'
+        $request->validate([
+            'idmargin_penjualan' => 'required|exists:margin_penjualan,idmargin_penjualan',
+            'details' => 'required|array|min:1',
+            'details.*.idbarang' => 'required|exists:barang,idbarang',
+            'details.*.jumlah' => 'required|integer|min:1'
+        ], [
+            'idmargin_penjualan.required' => 'Margin penjualan harus ada',
+            'details.required' => 'Minimal 1 barang harus ditambahkan',
+            'details.min' => 'Minimal 1 barang harus ditambahkan'
         ]);
 
-        DB::beginTransaction();
         try {
+            DB::beginTransaction();
+            
             $iduser = Auth::id();
-            $idMargin = $validated['idmargin_penjualan'];
-
-            // Validasi cart tidak kosong
-            $cartCount = TempDetailPenjualan::count();
-            if ($cartCount == 0) {
-                return back()->with('error', 'Keranjang belanja kosong!');
-            }
-
-            // GUNAKAN STORED PROCEDURE sp_insert_penjualan
-            // Procedure ini akan:
-            // 1. Hitung subtotal dari temp table
-            // 2. Hitung PPN 11%
-            // 3. Insert ke penjualan
-            // 4. Pindahkan data dari temp ke detail_penjualan
-            // 5. Trigger akan update kartu_stok (stok keluar)
-            // 6. Clear temp table
+            $idmargin = $request->idmargin_penjualan;
             
-            DB::statement('CALL sp_insert_penjualan(?, ?)', [$iduser, $idMargin]);
-
-            // Get ID penjualan terakhir
-            $idpenjualan = DB::table('penjualan')
-                ->where('iduser', $iduser)
-                ->latest('idpenjualan')
-                ->value('idpenjualan');
-
+            // Ambil persen margin
+            $margin = DB::selectOne("SELECT persen FROM margin_penjualan WHERE idmargin_penjualan = ?", [$idmargin]);
+            $persenMargin = $margin->persen;
+            
+            // Validasi stok untuk semua barang
+            foreach ($request->details as $detail) {
+                $stok = DB::selectOne("SELECT fn_cek_stok(?) AS stok", [$detail['idbarang']])->stok;
+                if ($stok < $detail['jumlah']) {
+                    $namaBarang = DB::selectOne("SELECT nama FROM barang WHERE idbarang = ?", [$detail['idbarang']])->nama;
+                    return back()->withInput()
+                        ->with('error', "Stok tidak mencukupi untuk {$namaBarang}! Stok tersedia: {$stok}");
+                }
+            }
+            
+            // Insert penjualan (subtotal, ppn, total akan diupdate otomatis oleh trigger)
+            DB::statement("
+                INSERT INTO penjualan (iduser, idmargin_penjualan, subtotal_nilai, ppn, total_nilai, created_at)
+                VALUES (?, ?, 0, 0, 0, NOW())
+            ", [$iduser, $idmargin]);
+            
+            // Ambil ID penjualan yang baru dibuat
+            $idpenjualan = DB::getPdo()->lastInsertId();
+            
+            // Insert detail penjualan
+            foreach ($request->details as $detail) {
+                // Ambil harga beli
+                $hargaBeli = DB::selectOne("SELECT harga FROM barang WHERE idbarang = ?", [$detail['idbarang']])->harga;
+                
+                // Hitung harga jual dengan margin
+                $hargaJual = round($hargaBeli * (1 + ($persenMargin / 100)), 0);
+                $subtotal = $hargaJual * $detail['jumlah'];
+                
+                // Insert detail penjualan
+                DB::statement("
+                    INSERT INTO detail_penjualan (idpenjualan, idbarang, jumlah, harga_satuan, subtotal)
+                    VALUES (?, ?, ?, ?, ?)
+                ", [$idpenjualan, $detail['idbarang'], $detail['jumlah'], $hargaJual, $subtotal]);
+                
+                // Trigger tr_after_insert_detail_penjualan akan otomatis:
+                // 1. Update kartu_stok (stok keluar)
+                // 2. Update total di tabel penjualan
+            }
+            
             DB::commit();
-
-            return redirect()->route('superadmin.penjualan.invoice', $idpenjualan)
-                ->with('success', 'Transaksi berhasil! Stok otomatis berkurang.');
-
+            
+            return redirect()->route('superadmin.penjualan.show', $idpenjualan)
+                ->with('success', 'Penjualan berhasil diproses');
+                
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Checkout gagal: ' . $e->getMessage());
+            return back()->withInput()
+                ->with('error', 'Gagal memproses penjualan: ' . $e->getMessage());
         }
     }
 
-    // Invoice / Struk
-    public function invoice($id)
+    /**
+     * Display the specified resource.
+     */
+    public function show(string $id)
     {
-        $penjualan = DB::table('v_data_penjualan')
-            ->where('idpenjualan', $id)
-            ->get();
-
-        if ($penjualan->isEmpty()) {
-            abort(404, 'Invoice tidak ditemukan');
+        try {
+            // Ambil data penjualan
+            $penjualan = DB::select("
+                SELECT 
+                    p.*,
+                    u.username,
+                    m.persen AS persen_margin
+                FROM penjualan p
+                JOIN user u ON p.iduser = u.iduser
+                JOIN margin_penjualan m ON p.idmargin_penjualan = m.idmargin_penjualan
+                WHERE p.idpenjualan = ?
+            ", [$id]);
+            
+            if (empty($penjualan)) {
+                return redirect()->route('superadmin.penjualan.index')
+                    ->with('error', 'Data penjualan tidak ditemukan');
+            }
+            
+            $penjualan = $penjualan[0];
+            
+            // Ambil detail barang yang dijual
+            $details = DB::select("
+                SELECT 
+                    dp.iddetail_penjualan,
+                    dp.idbarang,
+                    b.nama AS nama_barang,
+                    CASE 
+                        WHEN b.jenis = 'S' THEN 'Sembako & Bahan Pokok'
+                        WHEN b.jenis = 'M' THEN 'Minuman'
+                        WHEN b.jenis = 'K' THEN 'Makanan Olahan & Snack'
+                        WHEN b.jenis = 'P' THEN 'Personal Care'
+                        WHEN b.jenis = 'H' THEN 'Household / Home Care'
+                        WHEN b.jenis = 'D' THEN 'Dapur & Plastik'
+                        ELSE 'Lain-lain'
+                    END AS kategori_barang,
+                    s.nama_satuan,
+                    dp.jumlah,
+                    dp.harga_satuan,
+                    dp.subtotal
+                FROM detail_penjualan dp
+                JOIN barang b ON dp.idbarang = b.idbarang
+                JOIN satuan s ON b.idsatuan = s.idsatuan
+                WHERE dp.idpenjualan = ?
+            ", [$id]);
+            
+            // Ambil kartu stok untuk penjualan ini
+            $kartuStok = DB::select("
+                SELECT 
+                    ks.*,
+                    b.nama AS nama_barang
+                FROM kartu_stok ks
+                JOIN barang b ON ks.idbarang = b.idbarang
+                WHERE ks.jenis_transaksi = 'J' AND ks.idtransaksi = ?
+                ORDER BY ks.created_at DESC
+            ", [$id]);
+            
+            return view('superadmin.penjualan.show', compact('penjualan', 'details', 'kartuStok'));
+            
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal memuat data: ' . $e->getMessage());
         }
-
-        $header = $penjualan->first();
-
-        return view('superadmin.penjualan.invoice', compact('penjualan', 'header'));
-    }
-
-    // Laporan penjualan
-    public function index(Request $request)
-    {
-        $startDate = $request->get('start_date');
-        $endDate = $request->get('end_date');
-
-        $query = DB::table('v_data_penjualan');
-
-        if ($startDate && $endDate) {
-            $query->whereBetween('tanggal_penjualan', [$startDate, $endDate]);
-        }
-
-        $penjualan = $query->orderBy('idpenjualan', 'desc')->paginate(15);
-
-        return view('superadmin.penjualan.index', compact('penjualan'));
-    }
-
-    // Laporan bulanan
-    public function laporanBulanan()
-    {
-        $laporan = DB::table('v_laporan_penjualan_bulanan')->get();
-
-        return view('superadmin.penjualan.laporan_bulanan', compact('laporan'));
     }
 }

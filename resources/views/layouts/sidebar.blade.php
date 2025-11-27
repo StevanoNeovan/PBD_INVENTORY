@@ -23,7 +23,7 @@
                 <li><a href="{{ route('superadmin.vendor.index') }}">🏢 Vendor</a></li>
                 <li><a href="{{ route('superadmin.satuan.index') }}">📏 Satuan</a></li>
                 <li><a href="{{ route('superadmin.barang.index') }}">📦 Barang</a></li>
-                <li><a href="{{ route('superadmin.margin.index') }}">💰 Margin Penjualan</a></li>
+                <li><a href="{{ route('superadmin.margin-penjualan.index') }}">💰 Margin Penjualan</a></li>
             </ul>
         </li>
 
@@ -36,22 +36,43 @@
                 <li><a href="{{ route('superadmin.pengadaan.index') }}">📥 Pengadaan</a></li>
                 <li><a href="{{ route('superadmin.penerimaan.index') }}">✅ Penerimaan</a></li>
                 <li><a href="{{ route('superadmin.retur.index') }}">↩️ Retur</a></li>
-                <li><a href="{{ route('superadmin.penjualan.pos') }}">🛒 POS / Kasir</a></li>
-                <li><a href="{{ route('superadmin.penjualan.index') }}">💵 Laporan Penjualan</a></li>
+                <li><a href="{{ route('superadmin.penjualan.index') }}">💵 Penjualan</a></li>
             </ul>
         </li>
 
-        <!-- Laporan -->
-        <li>
-            <a href="#laporanSubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
-                <i class="fas fa-chart-bar"></i> Laporan
-            </a>
-            <ul class="collapse list-unstyled" id="laporanSubmenu">
-                <li><a href="{{ route('superadmin.kartu-stok.index') }}">📊 Kartu Stok</a></li>
-                <li><a href="{{ route('superadmin.kartu-stok.low-stock') }}">⚠️ Stok Menipis</a></li>
-                <li><a href="{{ route('superadmin.penjualan.laporan-bulanan') }}">📈 Penjualan Bulanan</a></li>
-            </ul>
-        </li>
+        <!-- Laporan Menu -->
+            <li>
+                <a href="#laporanSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+                    <i class="fas fa-chart-bar"></i> Laporan
+                </a>
+                <ul class="collapse list-unstyled" id="laporanSubmenu">
+                    <li>
+                        <a href="{{ route('superadmin.kartu-stok.index') }}">
+                            <i class="fas fa-clipboard-list"></i> Kartu Stok
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ route('superadmin.kartu-stok.monitoring') }}">
+                            <i class="fas fa-boxes"></i> Monitoring Stok
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ route('superadmin.pengadaan.index') }}">
+                            <i class="fas fa-shopping-cart"></i> Laporan Pengadaan
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ route('superadmin.penerimaan.index') }}">
+                            <i class="fas fa-box-open"></i> Laporan Penerimaan
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ route('superadmin.penjualan.index') }}">
+                            <i class="fas fa-cash-register"></i> Laporan Penjualan
+                        </a>
+                    </li>
+                </ul>
+            </li>
     </ul>
 </nav>
 

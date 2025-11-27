@@ -5,36 +5,74 @@
         </button>
 
         <div class="ms-auto d-flex align-items-center">
-            <!-- Notifications -->
-            <div class="dropdown me-3">
-                <button class="btn btn-outline-danger position-relative" type="button" 
-                        id="notificationDropdown" data-bs-toggle="dropdown">
-                    <i class="fas fa-bell"></i>
-                    @php
-                        $lowStockCount = DB::table('v_laporan_stok_barang')
-                            ->where('saldo_akhir', '<', 10)
-                            ->where('saldo_akhir', '>', 0)
-                            ->count();
-                    @endphp
+            <!-- Notification Button -->
+            <div class="dropdown">
+                <button class="btn btn-link position-relative" type="button" id="notificationDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-bell fa-lg text-warning"></i>
                     @if($lowStockCount > 0)
                         <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
                             {{ $lowStockCount }}
                         </span>
                     @endif
                 </button>
-                <ul class="dropdown-menu dropdown-menu-end" style="width: 300px;">
-                    <li class="dropdown-header">Notifikasi Stok Menipis</li>
+                <ul class="dropdown-menu dropdown-menu-end" style="width: 350px; max-height: 400px; overflow-y: auto;">
+                    <li class="dropdown-header d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-exclamation-triangle text-warning"></i> Notifikasi Stok Menipis</span>
+                        @if($lowStockCount > 0)
+                            <span class="badge bg-danger">{{ $lowStockCount }}</span>
+                        @endif
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    
                     @if($lowStockCount > 0)
-                        <li><a class="dropdown-item" href="{{ route('superadmin.kartu-stok.low-stock') }}">
-                            <i class="fas fa-exclamation-triangle text-warning"></i> 
-                            {{ $lowStockCount }} barang stok menipis
-                        </a></li>
+                        @foreach($lowStockItems as $item)
+                        <li>
+                            <a class="dropdown-item py-2" href="{{ route('superadmin.kartu-stok.detail', $item->idbarang) }}">
+                                <div class="d-flex align-items-center">
+                                    <div class="flex-shrink-0">
+                                        @if($item->stok_tersedia == 0)
+                                            <i class="fas fa-times-circle text-danger fa-lg"></i>
+                                        @else
+                                            <i class="fas fa-exclamation-triangle text-warning fa-lg"></i>
+                                        @endif
+                                    </div>
+                                    <div class="flex-grow-1 ms-3">
+                                        <div class="fw-bold text-truncate" style="max-width: 200px;">
+                                            {{ $item->nama_barang }}
+                                        </div>
+                                        <div class="small text-muted">
+                                            Stok: 
+                                            @if($item->stok_tersedia == 0)
+                                                <span class="badge bg-danger">Habis</span>
+                                            @else
+                                                <span class="badge bg-warning">{{ $item->stok_tersedia }}</span>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        </li>
+                        @if(!$loop->last)
+                            <li><hr class="dropdown-divider"></li>
+                        @endif
+                        @endforeach
+                        
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item text-center text-primary" href="{{ route('superadmin.kartu-stok.monitoring') }}">
+                                <i class="fas fa-eye"></i> Lihat Semua Stok
+                            </a>
+                        </li>
                     @else
-                        <li><span class="dropdown-item text-muted">Tidak ada notifikasi</span></li>
+                        <li>
+                            <span class="dropdown-item text-center text-muted">
+                                <i class="fas fa-check-circle text-success"></i>
+                                <div class="mt-2">Semua stok aman</div>
+                            </span>
+                        </li>
                     @endif
                 </ul>
             </div>
-
             <!-- User Menu -->
             <div class="dropdown">
                 <button class="btn btn-outline-primary dropdown-toggle" type="button" 

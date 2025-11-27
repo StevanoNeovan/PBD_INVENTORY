@@ -3,146 +3,164 @@
 namespace App\Http\Controllers\Superadmin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Pengadaan;
-use App\Models\DetailPengadaan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 
 class PengadaanController extends Controller
 {
-    // Tampilkan daftar pengadaan dari VIEW
-    public function index(Request $request)
+    /**
+     * Display a listing of the resource.
+     */
+    public function index()
     {
-        $startDate = $request->get('start_date');
-        $endDate = $request->get('end_date');
-        $vendor = $request->get('vendor');
-
-        $query = DB::table('v_data_pengadaan');
-
-        if ($startDate && $endDate) {
-            $query->whereBetween('tanggal_pengadaan', [$startDate, $endDate]);
+        try {
+            // Mengambil data pengadaan dengan status dari view
+            $pengadaans = DB::select(" SELECT * FROM v_data_pengadaan");
+            
+            return view('superadmin.pengadaan.index', compact('pengadaans'));
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal memuat data: ' . $e->getMessage());
         }
-
-        if ($vendor) {
-            $query->where('nama_vendor', 'like', "%{$vendor}%");
-        }
-
-        $pengadaan = $query->orderBy('idpengadaan', 'desc')->paginate(15);
-
-        // Untuk dropdown filter vendor
-        $vendors = DB::table('v_data_vendor_aktif')->get();
-
-        return view('superadmin.pengadaan.index', compact('pengadaan', 'vendors'));
     }
 
-    // Form tambah pengadaan
+    /**
+     * Show the form for creating a new resource.
+     */
     public function create()
     {
-        $vendors = DB::table('v_data_vendor_aktif')->get();
-        $barang = DB::table('v_data_barang_aktif')->get();
-
-        return view('superadmin.pengadaan.create', compact('vendors', 'barang'));
+        try {
+            // Ambil vendor aktif
+            $vendors = DB::select("SELECT * FROM v_data_vendor_aktif ORDER BY nama_vendor ASC");
+            
+            // Ambil barang aktif
+            $barangs = DB::select("SELECT * FROM v_data_barang_aktif ORDER BY nama_barang ASC");
+            
+            return view('superadmin.pengadaan.create', compact('vendors', 'barangs'));
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal memuat data: ' . $e->getMessage());
+        }
     }
 
-    // Simpan pengadaan (menggunakan stored procedure)
+    /**
+     * Store a newly created resource in storage.
+     */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $request->validate([
             'idvendor' => 'required|exists:vendor,idvendor',
-            'detail' => 'required|array|min:1',
-            'detail.*.idbarang' => 'required|exists:barang,idbarang',
-            'detail.*.jumlah' => 'required|integer|min:1',
-            'detail.*.harga_satuan' => 'required|integer|min:0',
+            'details' => 'required|array|min:1',
+            'details.*.idbarang' => 'required|exists:barang,idbarang',
+            'details.*.jumlah' => 'required|integer|min:1'
+        ], [
+            'idvendor.required' => 'Vendor harus dipilih',
+            'details.required' => 'Minimal 1 barang harus ditambahkan',
+            'details.min' => 'Minimal 1 barang harus ditambahkan'
         ]);
 
-        DB::beginTransaction();
         try {
+            DB::beginTransaction();
+            
             $iduser = Auth::id();
             $idvendor = $request->idvendor;
-
-            // Step 1: Insert pengadaan header (pakai procedure)
-            $result = DB::select('CALL sp_insert_pengadaan(?, ?)', [$iduser, $idvendor]);
+            
+            // Insert pengadaan (subtotal, ppn, total akan diupdate otomatis oleh trigger)
+            DB::statement("
+                INSERT INTO pengadaan (iduser, idvendor, subtotal_nilai, ppn, total_nilai, timestamp)
+                VALUES (?, ?, 0, 0, 0, NOW())
+            ", [$iduser, $idvendor]);
             
             // Ambil ID pengadaan yang baru dibuat
-            $idpengadaan = DB::table('pengadaan')
-                ->where('iduser', $iduser)
-                ->where('idvendor', $idvendor)
-                ->latest('idpengadaan')
-                ->value('idpengadaan');
-
-            // Step 2: Insert detail pengadaan
-            foreach ($request->detail as $item) {
-                $subtotal = $item['jumlah'] * $item['harga_satuan'];
-                
-                DetailPengadaan::create([
-                    'idpengadaan' => $idpengadaan,
-                    'idbarang' => $item['idbarang'],
-                    'jumlah' => $item['jumlah'],
-                    'harga_satuan' => $item['harga_satuan'],
-                    'sub_total' => $subtotal
+            $idpengadaan = DB::getPdo()->lastInsertId();
+            
+            // Insert detail pengadaan menggunakan Stored Procedure
+            foreach ($request->details as $detail) {
+                DB::statement("CALL sp_insert_detail_pengadaan(?, ?, ?)", [
+                    $idpengadaan,
+                    $detail['idbarang'],
+                    $detail['jumlah']
                 ]);
-                // Trigger akan otomatis update total di tabel pengadaan
             }
-
+            
             DB::commit();
-            return redirect()->route('superadmin.pengadaan.index')
-                ->with('success', 'Pengadaan berhasil dibuat. Total akan dihitung otomatis.');
-
+            
+            return redirect()->route('superadmin.pengadaan.show', $idpengadaan)
+                ->with('success', 'Pengadaan berhasil dibuat');
+                
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Gagal membuat pengadaan: ' . $e->getMessage());
+            return back()->withInput()
+                ->with('error', 'Gagal membuat pengadaan: ' . $e->getMessage());
         }
     }
 
-    // Detail pengadaan (untuk cetak/view)
-    public function show($id)
+    /**
+     * Display the specified resource.
+     */
+    public function show(string $id)
     {
-        // Gunakan view untuk get detail lengkap
-        $pengadaan = DB::table('v_data_pengadaan')
-            ->where('idpengadaan', $id)
-            ->get();
-
-        if ($pengadaan->isEmpty()) {
-            abort(404, 'Pengadaan tidak ditemukan');
+        try {
+            // Ambil data pengadaan
+            $pengadaan = DB::select("
+                SELECT 
+                    p.*,
+                    v.nama_vendor,
+                    u.username,
+                    fn_status_pengadaan(p.idpengadaan) AS status_pengadaan
+                FROM pengadaan p
+                JOIN vendor v ON p.idvendor = v.idvendor
+                JOIN user u ON p.iduser = u.iduser
+                WHERE p.idpengadaan = ?
+            ", [$id]);
+            
+            if (empty($pengadaan)) {
+                return redirect()->route('superadmin.pengadaan.index')
+                    ->with('error', 'Data pengadaan tidak ditemukan');
+            }
+            
+            $pengadaan = $pengadaan[0];
+            
+            // Ambil detail barang dengan status penerimaan
+            $details = DB::select("
+                SELECT 
+                    dp.iddetail_pengadaan,
+                    b.nama AS nama_barang,
+                    CASE 
+                        WHEN b.jenis = 'S' THEN 'Sembako & Bahan Pokok'
+                        WHEN b.jenis = 'M' THEN 'Minuman'
+                        WHEN b.jenis = 'K' THEN 'Makanan Olahan & Snack'
+                        WHEN b.jenis = 'P' THEN 'Personal Care'
+                        WHEN b.jenis = 'H' THEN 'Household / Home Care'
+                        WHEN b.jenis = 'D' THEN 'Dapur & Plastik'
+                        ELSE 'Lain-lain'
+                    END AS kategori_barang,
+                    dp.jumlah AS jumlah_pesan,
+                    COALESCE(SUM(dpe.jumlah_terima), 0) AS jumlah_diterima,
+                    dp.jumlah - COALESCE(SUM(dpe.jumlah_terima), 0) AS jumlah_sisa,
+                    dp.harga_satuan,
+                    dp.sub_total
+                FROM detail_pengadaan dp
+                JOIN barang b ON dp.idbarang = b.idbarang
+                LEFT JOIN penerimaan pe ON pe.idpengadaan = ?
+                LEFT JOIN detail_penerimaan dpe ON dpe.idpenerimaan = pe.idpenerimaan 
+                    AND dpe.idbarang = dp.idbarang
+                WHERE dp.idpengadaan = ?
+                GROUP BY dp.iddetail_pengadaan
+            ", [$id, $id]);
+            
+            // Ambil riwayat penerimaan
+            $riwayatPenerimaan = DB::select("
+                SELECT p.*, u.username
+                FROM penerimaan p
+                JOIN user u ON p.iduser = u.iduser
+                WHERE p.idpengadaan = ?
+                ORDER BY p.created_at DESC
+            ", [$id]);
+            
+            return view('superadmin.pengadaan.show', compact('pengadaan', 'details', 'riwayatPenerimaan'));
+            
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal memuat data: ' . $e->getMessage());
         }
-
-        // Group by untuk header info
-        $header = $pengadaan->first();
-
-        return view('superadmin.pengadaan.detail', compact('pengadaan', 'header'));
-    }
-
-    // API: Hitung subtotal (gunakan function MySQL)
-    public function hitungSubtotal(Request $request)
-    {
-        $jumlah = $request->jumlah;
-        $harga = $request->harga_satuan;
-
-        $result = DB::select('SELECT fn_hitung_subtotal(?, ?) as subtotal', [$jumlah, $harga]);
-        
-        return response()->json([
-            'subtotal' => $result[0]->subtotal
-        ]);
-    }
-
-    // API: Hitung PPN (gunakan function MySQL)
-    public function hitungPPN($subtotal)
-    {
-        $result = DB::select('SELECT fn_hitung_ppn(?) as ppn', [$subtotal]);
-        
-        return response()->json([
-            'ppn' => $result[0]->ppn
-        ]);
-    }
-
-    // API: Get total pengadaan (untuk preview sebelum submit)
-    public function getTotalPengadaan($idpengadaan)
-    {
-        $result = DB::select('SELECT fn_total_pengadaan(?) as total', [$idpengadaan]);
-        
-        return response()->json([
-            'total' => $result[0]->total
-        ]);
     }
 }

@@ -163,7 +163,7 @@
                     <h6 class="m-0 font-weight-bold">
                         <i class="fas fa-exclamation-triangle"></i> Stok Menipis (< 10 unit)
                     </h6>
-                    <a href="{{ route('superadmin.kartu-stok.low-stock') }}" class="btn btn-sm btn-light">
+                    <a href="{{ route('superadmin.kartu-stok.monitoring') }}" class="btn btn-sm btn-light">
                         Lihat Semua
                     </a>
                 </div>

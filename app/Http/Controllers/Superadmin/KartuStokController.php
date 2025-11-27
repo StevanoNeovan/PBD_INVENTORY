@@ -8,144 +8,179 @@ use Illuminate\Support\Facades\DB;
 
 class KartuStokController extends Controller
 {
-    // Laporan stok semua barang
-    public function index()
+    /**
+     * Display a listing of the resource (Kartu Stok dengan filter)
+     */
+    public function index(Request $request)
     {
-        // Gunakan VIEW v_laporan_stok_barang
-        $stok = DB::table('v_laporan_stok_barang')
-            ->orderBy('nama_barang')
-            ->get();
-
-        // Hitung total nilai inventory
-        $totalInventory = DB::table('v_laporan_stok_barang as s')
-            ->join('barang as b', 's.idbarang', '=', 'b.idbarang')
-            ->selectRaw('SUM(s.saldo_akhir * b.harga) as total_nilai')
-            ->value('total_nilai');
-
-        return view('superadmin.kartu_stok.index', compact('stok', 'totalInventory'));
-    }
-
-    // Detail kartu stok per barang
-    public function show($idbarang)
-    {
-        // Info barang
-        $barang = DB::table('v_data_barang')
-            ->where('idbarang', $idbarang)
-            ->first();
-
-        if (!$barang) {
-            abort(404, 'Barang tidak ditemukan');
+        try {
+            // Ambil filter
+            $idbarang = $request->get('idbarang');
+            $jenis_transaksi = $request->get('jenis_transaksi');
+            $tanggal_dari = $request->get('tanggal_dari');
+            $tanggal_sampai = $request->get('tanggal_sampai');
+            
+            // Build query dengan filter
+            $query = "
+                SELECT 
+                    ks.idkartu_stok,
+                    ks.created_at,
+                    ks.jenis_transaksi,
+                    ks.masuk,
+                    ks.keluar,
+                    ks.stock,
+                    ks.idtransaksi,
+                    b.nama AS nama_barang
+                FROM kartu_stok ks
+                JOIN barang b ON ks.idbarang = b.idbarang
+                WHERE 1=1
+            ";
+            
+            $params = [];
+            
+            if ($idbarang) {
+                $query .= " AND ks.idbarang = ?";
+                $params[] = $idbarang;
+            }
+            
+            if ($jenis_transaksi) {
+                $query .= " AND ks.jenis_transaksi = ?";
+                $params[] = $jenis_transaksi;
+            }
+            
+            if ($tanggal_dari) {
+                $query .= " AND DATE(ks.created_at) >= ?";
+                $params[] = $tanggal_dari;
+            }
+            
+            if ($tanggal_sampai) {
+                $query .= " AND DATE(ks.created_at) <= ?";
+                $params[] = $tanggal_sampai;
+            }
+            
+            $query .= " ORDER BY ks.created_at DESC, ks.idkartu_stok DESC";
+            
+            $kartuStoks = DB::select($query, $params);
+            
+            // Ambil semua barang untuk dropdown filter
+            $barangs = DB::select("SELECT idbarang, nama AS nama_barang FROM barang WHERE status = 1 ORDER BY nama ASC");
+            
+            return view('superadmin.kartu-stok.index', compact('kartuStoks', 'barangs'));
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal memuat data: ' . $e->getMessage());
         }
-
-        // History transaksi dari kartu_stok
-        $history = DB::table('kartu_stok as k')
-            ->where('k.idbarang', $idbarang)
-            ->orderBy('k.created_at', 'desc')
-            ->select(
-                'k.*',
-                DB::raw("CASE 
-                    WHEN k.jenis_transaksi = 'M' THEN 'Penerimaan'
-                    WHEN k.jenis_transaksi = 'J' THEN 'Penjualan'
-                    WHEN k.jenis_transaksi = 'R' THEN 'Retur'
-                    ELSE 'Lainnya'
-                END as nama_transaksi")
-            )
-            ->get();
-
-        // Summary
-        $summary = DB::table('v_laporan_stok_barang')
-            ->where('idbarang', $idbarang)
-            ->first();
-
-        return view('superadmin.kartu_stok.detail', compact('barang', 'history', 'summary'));
     }
 
-    // Filter kartu stok by periode
-    public function filter(Request $request, $idbarang)
+    /**
+     * Monitoring Stok (Dashboard Stok)
+     */
+    public function monitoring()
     {
-        $startDate = $request->get('start_date');
-        $endDate = $request->get('end_date');
-
-        $barang = DB::table('v_data_barang')
-            ->where('idbarang', $idbarang)
-            ->first();
-
-        $query = DB::table('kartu_stok as k')
-            ->where('k.idbarang', $idbarang)
-            ->select(
-                'k.*',
-                DB::raw("CASE 
-                    WHEN k.jenis_transaksi = 'M' THEN 'Penerimaan'
-                    WHEN k.jenis_transaksi = 'J' THEN 'Penjualan'
-                    WHEN k.jenis_transaksi = 'R' THEN 'Retur'
-                    ELSE 'Lainnya'
-                END as nama_transaksi")
-            );
-
-        if ($startDate && $endDate) {
-            $query->whereBetween('k.created_at', [$startDate, $endDate]);
+        try {
+            // Menggunakan view v_stok_barang
+            $semuaBarang = DB::select("SELECT * FROM v_stok_barang ORDER BY nama_barang ASC");
+            
+            // Filter berdasarkan status stok
+            $barangTersedia = array_filter($semuaBarang, function($b) {
+                return $b->status_stok == 'Tersedia';
+            });
+            
+            $barangMenipis = array_filter($semuaBarang, function($b) {
+                return $b->status_stok == 'Menipis';
+            });
+            
+            $barangHabis = array_filter($semuaBarang, function($b) {
+                return $b->status_stok == 'Habis';
+            });
+            
+            // Summary
+            $totalBarang = count($semuaBarang);
+            $stokTersedia = count($barangTersedia);
+            $stokMenipis = count($barangMenipis);
+            $stokHabis = count($barangHabis);
+            
+            return view('superadmin.kartu-stok.monitoring', compact(
+                'semuaBarang', 
+                'barangTersedia', 
+                'barangMenipis', 
+                'barangHabis',
+                'totalBarang',
+                'stokTersedia',
+                'stokMenipis',
+                'stokHabis'
+            ));
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal memuat data: ' . $e->getMessage());
         }
-
-        $history = $query->orderBy('k.created_at', 'desc')->get();
-
-        // Hitung summary filtered
-        $totalMasuk = $history->sum('masuk');
-        $totalKeluar = $history->sum('keluar');
-        $saldoAkhir = $totalMasuk - $totalKeluar;
-
-        return view('superadmin.kartu_stok.detail', compact(
-            'barang', 
-            'history', 
-            'totalMasuk', 
-            'totalKeluar', 
-            'saldoAkhir'
-        ));
     }
 
-    // Barang dengan stok menipis (alert)
-    public function lowStock()
+    /**
+     * Detail kartu stok per barang
+     */
+    public function detail(string $idbarang)
     {
-        $threshold = 10; // Threshold stok minimum
-
-        $lowStock = DB::table('v_laporan_stok_barang as s')
-            ->join('v_data_barang as b', 's.idbarang', '=', 'b.idbarang')
-            ->where('s.saldo_akhir', '<', $threshold)
-            ->where('s.saldo_akhir', '>', 0)
-            ->select('b.*', 's.saldo_akhir as stok')
-            ->get();
-
-        $outOfStock = DB::table('v_laporan_stok_barang as s')
-            ->join('v_data_barang as b', 's.idbarang', '=', 'b.idbarang')
-            ->where('s.saldo_akhir', '<=', 0)
-            ->select('b.*', 's.saldo_akhir as stok')
-            ->get();
-
-        return view('superadmin.kartu_stok.low_stock', compact('lowStock', 'outOfStock'));
-    }
-
-    // Export Excel (opsional)
-    public function export()
-    {
-        $stok = DB::table('v_laporan_stok_barang')
-            ->join('barang', 'v_laporan_stok_barang.idbarang', '=', 'barang.idbarang')
-            ->select('v_laporan_stok_barang.*', 'barang.harga')
-            ->get();
-
-        // Format data untuk export
-        $data = $stok->map(function($item) {
-            return [
-                'ID Barang' => $item->idbarang,
-                'Nama Barang' => $item->nama_barang,
-                'Satuan' => $item->nama_satuan,
-                'Total Masuk' => $item->total_masuk,
-                'Total Keluar' => $item->total_keluar,
-                'Saldo Akhir' => $item->saldo_akhir,
-                'Harga Satuan' => $item->harga,
-                'Nilai Inventory' => $item->saldo_akhir * $item->harga
-            ];
-        });
-
-        return response()->json($data);
-        // Atau gunakan package seperti Maatwebsite/Excel
+        try {
+            // Ambil info barang dengan stok
+            $barang = DB::select("SELECT * FROM v_stok_barang WHERE idbarang = ?", [$idbarang]);
+            
+            if (empty($barang)) {
+                return redirect()->route('superadmin.kartu-stok.monitoring')
+                    ->with('error', 'Data barang tidak ditemukan');
+            }
+            
+            $barang = $barang[0];
+            
+            // Ambil riwayat kartu stok untuk barang ini
+            $riwayat = DB::select("
+                SELECT *
+                FROM kartu_stok
+                WHERE idbarang = ?
+                ORDER BY created_at DESC, idkartu_stok DESC
+            ", [$idbarang]);
+            
+            // Hitung summary
+            $totalMasuk = DB::selectOne("
+                SELECT COALESCE(SUM(masuk), 0) AS total
+                FROM kartu_stok
+                WHERE idbarang = ?
+            ", [$idbarang])->total;
+            
+            $totalKeluar = DB::selectOne("
+                SELECT COALESCE(SUM(keluar), 0) AS total
+                FROM kartu_stok
+                WHERE idbarang = ?
+            ", [$idbarang])->total;
+            
+            // Hitung jumlah transaksi per jenis
+            $jumlahPenerimaan = DB::selectOne("
+                SELECT COUNT(*) AS total
+                FROM kartu_stok
+                WHERE idbarang = ? AND jenis_transaksi = 'P'
+            ", [$idbarang])->total;
+            
+            $jumlahPenjualan = DB::selectOne("
+                SELECT COUNT(*) AS total
+                FROM kartu_stok
+                WHERE idbarang = ? AND jenis_transaksi = 'J'
+            ", [$idbarang])->total;
+            
+            $jumlahRetur = DB::selectOne("
+                SELECT COUNT(*) AS total
+                FROM kartu_stok
+                WHERE idbarang = ? AND jenis_transaksi = 'R'
+            ", [$idbarang])->total;
+            
+            return view('superadmin.kartu-stok.detail', compact(
+                'barang', 
+                'riwayat', 
+                'totalMasuk', 
+                'totalKeluar',
+                'jumlahPenerimaan',
+                'jumlahPenjualan',
+                'jumlahRetur'
+            ));
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal memuat data: ' . $e->getMessage());
+        }
     }
 }
